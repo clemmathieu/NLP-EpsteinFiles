@@ -382,11 +382,8 @@ def main() -> None:
 
     # ── Sidebar ───────────────────────────────────────────────────────────────
     with st.sidebar:
-        st.image(
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/"
-            "FBI_Seal_3D.png/200px-FBI_Seal_3D.png",
-            width=80,
-        )
+        st.image("extras/logo.png", width=180)
+
         st.header("Dataset Summary")
         st.metric("Total Threads",    f"{len(df):,}")
         st.metric("Flagged",          f"{int(df['risk_flag'].sum()):,}")
