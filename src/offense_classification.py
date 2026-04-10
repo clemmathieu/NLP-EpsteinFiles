@@ -1,5 +1,5 @@
 """
-Stage 2 - Offense Classification  +  NER  +  Sentence Embeddings
+Stage 2 – Offense Classification  +  NER  +  Sentence Embeddings
 =================================================================
 Takes the Stage-1 output (``data/binary_classified.csv``), and for every
 *flagged* thread applies multi-label zero-shot classification across six
@@ -10,14 +10,14 @@ Architecture
 ------------
 * Classifier : facebook/bart-large-mnli  (multi_label=True)
 * Categories : six taxonomy labels derived from known Epstein case facts
-* Threshold  : 0.30 per label - intentionally permissive for recall
+* Threshold  : 0.30 per label – intentionally permissive for recall
 * NER        : spaCy en_core_web_sm
 * Embeddings : all-MiniLM-L6-v2  (L2-normalised → cosine via inner product)
 
 Outputs
 -------
-data/classified_emails.csv  -  final annotated DataFrame (consumed by app.py)
-data/embeddings.npy          -  float32 array of shape (n_threads, 384)
+data/classified_emails.csv  –  final annotated DataFrame (consumed by app.py)
+data/embeddings.npy          –  float32 array of shape (n_threads, 384)
 """
 
 import ast
@@ -33,12 +33,12 @@ from transformers import pipeline
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 OFFENSE_CATEGORIES = [
-    "sexual exploitation or trafficking",
-    "financial fraud or money laundering",
-    "obstruction or witness tampering",
-    "bribery or corruption",
-    "coercion or blackmail",
-    "network facilitation or coordination",
+    "Sexual exploitation or trafficking",
+    "Financial fraud or money laundering",
+    "Obstruction or witness tampering",
+    "Bribery or corruption",
+    "Coercion or blackmail",
+    "Network facilitation or coordination",
 ]
 
 OFFENSE_THRESHOLD  = 0.30          # apply label when score >= threshold
@@ -49,7 +49,53 @@ OUTPUT_CSV         = "data/classified_emails.csv"
 OUTPUT_EMBEDDINGS  = "data/embeddings.npy"
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── NER filtering & normalisation ─────────────────────────────────────────────
+# spaCy's small model sometimes mis-tags apps, agencies, and other non-persons
+# as PERSON entities. These are filtered out at extraction time.
+_NON_PERSON_TOKENS = frozenset({
+    # Social media & tech apps
+    "twitter", "facebook", "instagram", "google", "youtube", "snapchat",
+    "whatsapp", "linkedin", "tiktok", "apple", "microsoft", "amazon",
+    "netflix", "uber", "lyft", "paypal", "venmo", "blackberry", "nokia",
+    "telegram", "signal", "skype", "zoom", "slack",
+    # News & media outlets
+    "cnn", "bbc", "nbc", "abc", "cbs", "msnbc", "fox", "fox news",
+    "new york times", "washington post", "reuters", "ap",
+    "associated press", "daily mail", "new york post",
+    # Government agencies
+    "fbi", "cia", "nsa", "doj", "sec", "dea", "nypd", "interpol",
+    "u.s.", "u.k.", "usa", "america",
+    # Honorifics / titles extracted on their own
+    "mr", "ms", "mrs", "dr", "sir", "lord", "lady", "hon", "esq",
+})
+
+
+def _is_valid_person(name: str) -> bool:
+    """
+    Return True only when the extracted token looks like a real person name.
+    Filters out apps, agencies, honorifics, and very short strings.
+    """
+    n = name.strip().lower()
+    return (
+        bool(n)
+        and n not in _NON_PERSON_TOKENS
+        and len(n) >= 3
+        and sum(c.isdigit() for c in n) <= 1
+    )
+
+
+def _normalize_name(name: str) -> str:
+    """
+    Title-case a person name consistently.
+    Handles hyphenated names (e.g. ``al-Fayed`` → ``Al-Fayed``).
+    """
+    return " ".join(
+        "-".join(part.capitalize() for part in word.split("-"))
+        for word in name.strip().split()
+    )
+
+
+# ── General helpers ───────────────────────────────────────────────────────────
 
 def _safe_eval_list(value) -> list:
     """Safely deserialise a stringified Python list back to a real list."""
@@ -112,19 +158,35 @@ def _get_offense_labels(row: pd.Series) -> list:
 
 def extract_entities(text: str, nlp) -> dict:
     """
-    Extract named entities (PERSON, ORG, GPE, LOC, DATE, MONEY) from text
-    using a pre-loaded spaCy pipeline.
+    Extract named entities from text using a pre-loaded spaCy pipeline.
+
+    Entity types retained: PERSON, ORG, GPE, LOC, DATE, MONEY.
+
+    PERSON entities are additionally:
+    - filtered through ``_is_valid_person`` to remove apps, agencies, etc.
+    - normalised to consistent title-case via ``_normalize_name``
     """
     if not text or len(text) < 10:
         return {}
+
     doc      = nlp(text[:1500])
     entities: dict = {}
+
     for ent in doc.ents:
-        if ent.label_ in {"PERSON", "ORG", "GPE", "LOC", "DATE", "MONEY"}:
-            bucket = entities.setdefault(ent.label_, [])
-            name   = ent.text.strip()
-            if name not in bucket:
-                bucket.append(name)
+        if ent.label_ not in {"PERSON", "ORG", "GPE", "LOC", "DATE", "MONEY"}:
+            continue
+
+        name = ent.text.strip()
+
+        if ent.label_ == "PERSON":
+            if not _is_valid_person(name):
+                continue                       # skip apps, agencies, etc.
+            name = _normalize_name(name)       # consistent title-casing
+
+        bucket = entities.setdefault(ent.label_, [])
+        if name not in bucket:
+            bucket.append(name)
+
     return entities
 
 
@@ -138,12 +200,11 @@ def build_embeddings(df: pd.DataFrame) -> np.ndarray:
     print("Loading sentence-transformer model …")
     embedder = SentenceTransformer(EMBEDDER_MODEL)
 
-    subjects = df["subject"].fillna("").astype(str)
+    subjects   = df["subject"].fillna("").astype(str)
     full_texts = df["full_text"].fillna("").astype(str).str[:200]
+    texts      = (subjects + " " + full_texts).tolist()
 
-    texts = (subjects + " " + full_texts).tolist()
     print(f"Encoding {len(texts):,} threads …")
-
     emb = embedder.encode(
         texts, batch_size=64, show_progress_bar=True, convert_to_numpy=True
     )
@@ -163,7 +224,7 @@ def run() -> pd.DataFrame:
 
     Returns
     -------
-    pd.DataFrame  -  final annotated DataFrame
+    pd.DataFrame  –  final annotated DataFrame
     """
     print(f"Loading Stage-1 output from {INPUT_PATH} …")
     classify_df = pd.read_csv(INPUT_PATH)
@@ -255,9 +316,9 @@ def run() -> pd.DataFrame:
 
     # Serialise list columns so CSV round-trips cleanly
     save_df = classify_df.copy()
-    save_df["senders"]       = save_df["senders"].apply(str)
+    save_df["senders"]        = save_df["senders"].apply(str)
     save_df["offense_labels"] = save_df["offense_labels"].apply(str)
-    save_df["entities"]      = save_df["entities"].apply(str)
+    save_df["entities"]       = save_df["entities"].apply(str)
 
     save_df.to_csv(OUTPUT_CSV, index=False)
     np.save(OUTPUT_EMBEDDINGS, embeddings)

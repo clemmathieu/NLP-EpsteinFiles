@@ -1,12 +1,12 @@
 """
-app.py - Epstein Investigation  |  Streamlit Dashboard
+app.py – Epstein Investigation  |  Streamlit Dashboard
 =======================================================
 Loads the pipeline artefacts produced by ``main.py`` and exposes a
 three-tab interactive dashboard:
 
-  Tab 1 - Dashboard       : corpus stats, risk distribution, offense breakdown
-  Tab 2 - Email Explorer  : keyword / filter search + full email detail view
-  Tab 3 - Semantic Search : FAISS-powered nearest-neighbour retrieval
+  Tab 1 – Dashboard       : corpus stats, risk distribution, offense breakdown
+  Tab 2 – Email Explorer  : multi-keyword / filter search + full email detail view
+  Tab 3 – Semantic Search : FAISS-powered nearest-neighbour retrieval
 
 Run
 ---
@@ -15,6 +15,7 @@ Run
 
 import ast
 import os
+import re
 
 import faiss
 import numpy as np
@@ -31,20 +32,102 @@ EMBEDDER_MODEL   = "all-MiniLM-L6-v2"
 BINARY_THRESHOLD = 0.35
 
 OFFENSE_CATEGORIES = [
-    "sexual exploitation or trafficking",
-    "financial fraud or money laundering",
-    "obstruction or witness tampering",
-    "bribery or corruption",
-    "coercion or blackmail",
-    "network facilitation or coordination",
+    "Sexual exploitation or trafficking",
+    "Financial fraud or money laundering",
+    "Obstruction or witness tampering",
+    "Bribery or corruption",
+    "Coercion or blackmail",
+    "Network facilitation or coordination",
 ]
 
 PALETTE = {
     "problematic": "#C0392B",
     "safe":        "#2E5FA3",
     "neutral":     "#7F8C8D",
-    "accent":      "#E67E22"
+    "accent":      "#E67E22",
 }
+
+# ── Name normalisation ────────────────────────────────────────────────────────
+# Entities that spaCy sometimes tags as PERSON but are not people
+_NON_PERSON_TOKENS = frozenset({
+    # Social media & tech apps
+    "twitter", "facebook", "instagram", "google", "youtube", "snapchat",
+    "whatsapp", "linkedin", "tiktok", "apple", "microsoft", "amazon",
+    "netflix", "uber", "lyft", "paypal", "venmo", "blackberry", "nokia",
+    "telegram", "signal", "skype", "zoom", "slack",
+    # News & media outlets
+    "cnn", "bbc", "nbc", "abc", "cbs", "msnbc", "fox", "fox news",
+    "new york times", "washington post", "reuters", "ap",
+    "associated press", "daily mail", "new york post",
+    # Government agencies & abbreviations
+    "fbi", "cia", "nsa", "doj", "sec", "dea", "nypd", "interpol",
+    "u.s.", "u.k.", "usa", "america",
+    # Honorifics that get extracted on their own
+    "mr", "ms", "mrs", "dr", "sir", "lord", "lady", "hon", "esq",
+})
+
+PERSON_ALIAS_GROUPS = {
+    "Donald Trump": {
+        "donald",
+        "trump",
+        "donald trump",
+    },
+    "Jeffrey Epstein": {
+        "epstein",
+        "jeffrey",
+        "jeffrey epstein",
+    },
+}
+
+PERSON_ALIAS_LOOKUP = {
+    alias.lower(): canonical
+    for canonical, aliases in PERSON_ALIAS_GROUPS.items()
+    for alias in aliases
+}
+
+
+def _normalize_name(name: str) -> str:
+    """Title-case a person name consistently."""
+    return " ".join(
+        "-".join(part.capitalize() for part in word.split("-"))
+        for word in name.strip().split()
+    )
+
+
+def _is_valid_person(name: str) -> bool:
+    """Return False for names that are clearly not real people."""
+    n = name.strip().lower()
+    return (
+        n not in _NON_PERSON_TOKENS
+        and len(n) >= 3
+        and sum(c.isdigit() for c in n) <= 1
+    )
+
+
+def normalize_persons(persons: list[str]) -> list[str]:
+    """
+    Normalize person names using explicit alias groups first,
+    then fall back to cleaned title-cased names.
+    """
+    normalized = []
+
+    for person in persons:
+        if not isinstance(person, str):
+            continue
+
+        raw = person.strip()
+        if not raw or not _is_valid_person(raw):
+            continue
+
+        key = raw.lower().strip()
+
+        # Explicit grouping first
+        if key in PERSON_ALIAS_LOOKUP:
+            normalized.append(PERSON_ALIAS_LOOKUP[key])
+        else:
+            normalized.append(_normalize_name(raw))
+
+    return normalized
 
 # ── Page configuration ────────────────────────────────────────────────────────
 st.set_page_config(
@@ -54,7 +137,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Inject a subtle custom style
 st.markdown(
     """
     <style>
@@ -174,7 +256,6 @@ def make_offense_bar(df: pd.DataFrame) -> go.Figure:
         title="Offense Category Breakdown",
         color_discrete_sequence=[PALETTE["problematic"]],
         labels={"x": "Count", "y": ""},
-        #text=s.values,
     )
     fig.update_traces(textposition="outside")
     fig.update_layout(
@@ -216,34 +297,49 @@ def make_score_hist(df: pd.DataFrame) -> go.Figure:
 
 
 def make_top_persons_bar(df: pd.DataFrame) -> go.Figure:
-    """Bar chart of the most frequently mentioned persons in flagged emails."""
-    persons = []
-    for entities_str in df[df["risk_flag"] == 1].get("entities_json", pd.Series(dtype=str)):
+    """
+    Bar chart of the most frequently mentioned *people* in flagged emails.
+    Names are normalised (title-cased, deduplicated variants grouped) and
+    non-person tokens (apps, agencies, etc.) are filtered out.
+    """
+    raw_persons: list[str] = []
+    for entities_str in df[df["risk_flag"] == 1].get(
+        "entities_json", pd.Series(dtype=str)
+    ):
         try:
             ents = ast.literal_eval(str(entities_str))
-            persons.extend(ents.get("PERSON", []))
+            raw_persons.extend(ents.get("PERSON", []))
         except Exception:
             pass
 
-    if not persons:
+    if not raw_persons:
         fig = go.Figure()
         fig.update_layout(title="No person entities found", template="plotly_white")
         return fig
 
-    top = pd.Series(persons).value_counts().head(15).sort_values(ascending=True)
+    # Normalise and group name variants before counting
+    normalised = normalize_persons(raw_persons)
+
+    top = (
+        pd.Series(normalised)
+        .value_counts()
+        .head(15)
+        .sort_values(ascending=True)
+    )
+
     fig = px.bar(
         x=top.values,
         y=top.index,
         orientation="h",
-        title="Top 15 Persons Mentioned in Flagged Emails",
+        title="Top 15 People Mentioned in Flagged Emails",
         color_discrete_sequence=[PALETTE["neutral"]],
         labels={"x": "Mentions", "y": ""},
-        #text=top.values,
+        text=top.values,
     )
     fig.update_traces(textposition="outside")
     fig.update_layout(
         template="plotly_white",
-        height=420,
+        height=450,
         margin=dict(t=50, b=20, l=20, r=20),
     )
     return fig
@@ -253,19 +349,47 @@ def make_top_persons_bar(df: pd.DataFrame) -> go.Figure:
 
 def keyword_search(
     df: pd.DataFrame,
-    keyword: str,
+    keywords: list[str],
+    match_mode: str,
     risk_filter: str,
     offense_filter: str,
     max_results: int,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, list]:
+    """
+    Filter emails by one or more keywords, risk level, and offense category.
+
+    Parameters
+    ----------
+    keywords : list[str]
+        One or more search terms. Each term is matched independently against
+        the email subject and body (case-insensitive).
+    match_mode : str
+        ``"AND"``  – email must contain **all** keywords (intersection).
+        ``"OR"``   – email must contain **at least one** keyword (union).
+    """
     results = df.copy()
 
-    if keyword.strip():
-        kw = keyword.strip()
-        mask = (
-            results["full_text"].str.contains(kw, case=False, na=False)
-            | results["subject"].str.contains(kw, case=False, na=False)
-        )
+    active = [kw for kw in keywords if kw.strip()]
+    if active:
+        if match_mode == "AND":
+            # Start with all True, narrow down for each keyword
+            mask = pd.Series(True, index=results.index)
+            for kw in active:
+                kw_mask = (
+                    results["full_text"].str.contains(kw, case=False, na=False)
+                    | results["subject"].str.contains(kw, case=False, na=False)
+                )
+                mask = mask & kw_mask
+        else:  # OR
+            # Start with all False, expand for each keyword
+            mask = pd.Series(False, index=results.index)
+            for kw in active:
+                kw_mask = (
+                    results["full_text"].str.contains(kw, case=False, na=False)
+                    | results["subject"].str.contains(kw, case=False, na=False)
+                )
+                mask = mask | kw_mask
+
         results = results[mask]
 
     if risk_filter == "Problematic Only":
@@ -310,12 +434,12 @@ def semantic_search(
         if 0 <= idx < len(df):
             row = df.iloc[idx]
             rows.append({
-                "Thread ID":   str(row["thread_id"]),
-                "Subject":     row["subject"],
-                "Risk":        row["risk_display"],
-                "Similarity":  round(float(score), 4),
-                "Offense":     row["offense_labels_display"],
-                "Preview":     str(row["full_text"])[:220] + " …",
+                "Thread ID":  str(row["thread_id"]),
+                "Subject":    row["subject"],
+                "Risk":       row["risk_display"],
+                "Similarity": round(float(score), 4),
+                "Offense":    row["offense_labels_display"],
+                "Preview":    str(row["full_text"])[:220] + " …",
             })
     return pd.DataFrame(rows)
 
@@ -359,6 +483,9 @@ def render_email_detail(row: pd.Series) -> None:
             cols = st.columns(len(ents))
             for i, (label, values) in enumerate(ents.items()):
                 cols[i].markdown(f"**{label}**")
+                # Normalise person names in the detail view too
+                if label == "PERSON":
+                    values = list(dict.fromkeys(normalize_persons(values)))
                 cols[i].write("\n".join(f"• {v}" for v in values[:10]))
     except Exception:
         pass
@@ -385,10 +512,10 @@ def main() -> None:
         st.image("extras/logo.png", width=180)
 
         st.header("Dataset Summary")
-        st.metric("Total Threads",    f"{len(df):,}")
-        st.metric("Flagged",          f"{int(df['risk_flag'].sum()):,}")
-        st.metric("Safe",             f"{len(df) - int(df['risk_flag'].sum()):,}")
-        st.metric("Flagged %",        f"{100 * df['risk_flag'].mean():.1f} %")
+        st.metric("Total Threads",     f"{len(df):,}")
+        st.metric("Flagged",           f"{int(df['risk_flag'].sum()):,}")
+        st.metric("Safe",              f"{len(df) - int(df['risk_flag'].sum()):,}")
+        st.metric("Flagged %",         f"{100 * df['risk_flag'].mean():.1f} %")
         avg_msgs = df["message_count"].mean() if "message_count" in df.columns else 0
         st.metric("Avg Msgs / Thread", f"{avg_msgs:.1f}")
 
@@ -406,16 +533,16 @@ def main() -> None:
     )
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # TAB 1 - Dashboard
+    # TAB 1 – Dashboard
     # ═══════════════════════════════════════════════════════════════════════════
     with tab1:
         st.subheader("Corpus Overview")
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Threads",  f"{len(df):,}")
-        c2.metric("Flagged",        f"{int(df['risk_flag'].sum()):,}")
-        c3.metric("Safe",           f"{len(df) - int(df['risk_flag'].sum()):,}")
-        c4.metric("Flagged %",      f"{100 * df['risk_flag'].mean():.1f} %")
+        c1.metric("Total Threads", f"{len(df):,}")
+        c2.metric("Flagged",       f"{int(df['risk_flag'].sum()):,}")
+        c3.metric("Safe",          f"{len(df) - int(df['risk_flag'].sum()):,}")
+        c4.metric("Flagged %",     f"{100 * df['risk_flag'].mean():.1f} %")
 
         st.divider()
 
@@ -431,23 +558,57 @@ def main() -> None:
             st.plotly_chart(make_top_persons_bar(df), use_container_width=True)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # TAB 2 - Email Explorer
+    # TAB 2 – Email Explorer
     # ═══════════════════════════════════════════════════════════════════════════
     with tab2:
         st.subheader("Search & Filter Emails")
 
-        f1, f2, f3 = st.columns([2, 1, 1])
-        keyword       = f1.text_input("Keyword", placeholder="e.g. travel, massage, payment …")
-        risk_filter   = f2.selectbox("Risk", ["All", "Problematic Only", "Safe Only"])
-        offense_filter = f3.selectbox("Offense Category", ["All"] + OFFENSE_CATEGORIES)
+        # ── Row 1: multi-keyword input + AND / OR toggle ───────────────────────
+        kw_col, mode_col = st.columns([3, 1])
+        keywords_raw = kw_col.text_input(
+            "Keywords (comma-separated)",
+            placeholder="e.g.  travel, massage, payment, Epstein",
+            help=(
+                "Enter one or more keywords separated by commas.  \n"
+                "**AND** → email must contain *all* keywords.  \n"
+                "**OR**  → email must contain *at least one* keyword."
+            ),
+        )
+        match_mode = mode_col.radio(
+            "Match mode",
+            ["AND", "OR"],
+            horizontal=True,
+            help="AND = all keywords present · OR = any keyword present",
+        )
 
+        # ── Row 2: structured filters ──────────────────────────────────────────
+        f1, f2 = st.columns(2)
+        risk_filter    = f1.selectbox("Risk", ["All", "Problematic Only", "Safe Only"])
+        offense_filter = f2.selectbox("Offense Category", ["All"] + OFFENSE_CATEGORIES)
+
+        # ── Row 3: result count + search button ───────────────────────────────
         s1, s2 = st.columns([4, 1])
         max_results = s1.slider("Max results", min_value=5, max_value=100, value=20, step=5)
         search_btn  = s2.button("🔍  Search", use_container_width=True, type="primary")
 
-        if search_btn or keyword:
+        # Parse comma-separated keywords
+        keywords = [k.strip() for k in keywords_raw.split(",") if k.strip()]
+
+        # Show active keyword chips for clarity
+        if keywords:
+            chip_html = " ".join(
+                f'<span style="background:#2E5FA3;color:#fff;padding:2px 8px;'
+                f'border-radius:12px;font-size:0.8rem;margin:2px">{k}</span>'
+                for k in keywords
+            )
+            st.markdown(
+                f"**Active keywords ({match_mode}):** {chip_html}",
+                unsafe_allow_html=True,
+            )
+
+        if search_btn or keywords:
             result_df, result_indices = keyword_search(
-                df, keyword, risk_filter, offense_filter, max_results
+                df, keywords, match_mode, risk_filter, offense_filter, max_results
             )
 
             st.caption(f"Showing **{len(result_df)}** result(s)")
@@ -456,15 +617,12 @@ def main() -> None:
             if result_indices:
                 st.divider()
                 st.subheader("Email Detail View")
-                # Let the user pick which result to inspect
-                thread_options = [
-                    str(df.loc[idx, "thread_id"])
-                    for idx in result_indices
-                ]
 
+                thread_options = [
+                    str(df.loc[idx, "thread_id"]) for idx in result_indices
+                ]
                 selected_thread_id = st.selectbox(
-                    "Select a thread ID to inspect",
-                    thread_options
+                    "Select a thread ID to inspect", thread_options
                 )
 
                 if selected_thread_id:
@@ -474,17 +632,20 @@ def main() -> None:
                             render_email_detail(matches.iloc[0])
         else:
             st.info(
-                "Enter a keyword or apply filters above, then click **Search**."
+                "Enter one or more keywords (comma-separated) or apply filters, "
+                "then click **Search**."
             )
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # TAB 3 - Semantic Search
+    # TAB 3 – Semantic Search
     # ═══════════════════════════════════════════════════════════════════════════
     with tab3:
         st.subheader("Semantic Similarity Search")
         st.caption(
-            "Uses FAISS + sentence embeddings to find emails "
-            "semantically related to your natural-language query."
+            "Finds emails that are **conceptually related** to your query using "
+            "FAISS + sentence embeddings — even if the exact words never appear.  \n"
+            "The **Similarity** score is cosine similarity (0 → 1). "
+            "Scores above ~0.4 indicate strong thematic relevance."
         )
 
         if not os.path.exists(EMBEDDINGS_PATH):
@@ -501,9 +662,9 @@ def main() -> None:
             st.stop()
 
         q1, q2 = st.columns([4, 1])
-        query = q1.text_input(
-            "Query",
-            placeholder="e.g. young girls travel arrangements …",
+        query     = q1.text_input(
+            "Natural-language query",
+            placeholder="e.g.  young girls travel arrangements …",
         )
         k_results = q2.slider("Results", min_value=3, max_value=25, value=10)
 
@@ -515,28 +676,30 @@ def main() -> None:
                     sem_df = semantic_search(
                         query, df, embedder, faiss_index, k=k_results
                     )
-                st.caption(
-                    f"Top **{len(sem_df)}** semantically similar threads"
-                )
+                st.caption(f"Top **{len(sem_df)}** semantically similar threads")
                 st.dataframe(sem_df, use_container_width=True, height=420)
 
                 if not sem_df.empty:
                     st.divider()
                     st.subheader("Detail View")
-                    options = [
-                        f"[{i+1}]  {row['Subject'][:80]}"
-                        for i, row in sem_df.iterrows()
-                    ]
-                    picked = st.selectbox("Select result to inspect", options, key="sem_pick")
-                    if picked:
-                        pos     = options.index(picked)
-                        tid     = sem_df.iloc[pos]["Thread ID"]
-                        matches = df[df["thread_id"].astype(str) == str(tid)]
+
+                    thread_options = sem_df["Thread ID"].astype(str).tolist()
+
+                    selected_thread_id = st.selectbox(
+                        "Select a thread ID to inspect",
+                        thread_options,
+                        key="sem_thread_pick",
+                    )
+
+                    if selected_thread_id:
+                        matches = df[df["thread_id"].astype(str) == str(selected_thread_id)]
                         if not matches.empty:
                             with st.expander("📧 Full Email Details", expanded=True):
                                 render_email_detail(matches.iloc[0])
-        else:
-            st.info("Enter a natural-language query above and click **Search Semantically**.")
+                        else:
+                            st.info(
+                                "Enter a natural-language query above and click **Search Semantically**."
+                            )
 
 
 if __name__ == "__main__":
