@@ -77,6 +77,11 @@ PERSON_ALIAS_GROUPS = {
         "jeffrey",
         "jeffrey epstein",
     },
+    "Bill Clinton": {
+        "bill",
+        "clinton",
+        "bill clinton",
+    },
 }
 
 PERSON_ALIAS_LOOKUP = {
@@ -334,7 +339,6 @@ def make_top_persons_bar(df: pd.DataFrame) -> go.Figure:
         title="Top 15 People Mentioned in Flagged Emails",
         color_discrete_sequence=[PALETTE["neutral"]],
         labels={"x": "Mentions", "y": ""},
-        text=top.values,
     )
     fig.update_traces(textposition="outside")
     fig.update_layout(
