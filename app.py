@@ -43,7 +43,7 @@ PALETTE = {
     "problematic": "#C0392B",
     "safe":        "#2E5FA3",
     "neutral":     "#7F8C8D",
-    "accent":      "#E67E22",
+    "accent":      "#E67E22"
 }
 
 # ── Page configuration ────────────────────────────────────────────────────────
@@ -143,7 +143,7 @@ def make_risk_pie(df: pd.DataFrame) -> go.Figure:
         title="Risk Distribution",
         template="plotly_white",
         height=360,
-        margin=dict(t=50, b=20, l=20, r=20),
+        margin=dict(t=75, b=20, l=20, r=20),
         showlegend=True,
     )
     return fig
@@ -174,7 +174,7 @@ def make_offense_bar(df: pd.DataFrame) -> go.Figure:
         title="Offense Category Breakdown",
         color_discrete_sequence=[PALETTE["problematic"]],
         labels={"x": "Count", "y": ""},
-        text=s.values,
+        #text=s.values,
     )
     fig.update_traces(textposition="outside")
     fig.update_layout(
@@ -203,7 +203,7 @@ def make_score_hist(df: pd.DataFrame) -> go.Figure:
     fig.add_vline(
         x=BINARY_THRESHOLD,
         line_dash="dash",
-        line_color=PALETTE["accent"],
+        line_color=PALETTE["neutral"],
         annotation_text=f"Threshold = {BINARY_THRESHOLD}",
         annotation_position="top right",
     )
@@ -238,7 +238,7 @@ def make_top_persons_bar(df: pd.DataFrame) -> go.Figure:
         title="Top 15 Persons Mentioned in Flagged Emails",
         color_discrete_sequence=[PALETTE["neutral"]],
         labels={"x": "Mentions", "y": ""},
-        text=top.values,
+        #text=top.values,
     )
     fig.update_traces(textposition="outside")
     fig.update_layout(
