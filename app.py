@@ -457,16 +457,21 @@ def main() -> None:
                 st.divider()
                 st.subheader("Email Detail View")
                 # Let the user pick which result to inspect
-                subject_options = [
-                    f"[{i+1}]  {df.loc[idx, 'subject'][:80]}"
-                    for i, idx in enumerate(result_indices)
+                thread_options = [
+                    str(df.loc[idx, "thread_id"])
+                    for idx in result_indices
                 ]
-                selected = st.selectbox("Select an email to inspect", subject_options)
-                if selected:
-                    chosen_pos = subject_options.index(selected)
-                    chosen_idx = result_indices[chosen_pos]
-                    with st.expander("📧 Full Email Details", expanded=True):
-                        render_email_detail(df.loc[chosen_idx])
+
+                selected_thread_id = st.selectbox(
+                    "Select a thread ID to inspect",
+                    thread_options
+                )
+
+                if selected_thread_id:
+                    matches = df[df["thread_id"].astype(str) == str(selected_thread_id)]
+                    if not matches.empty:
+                        with st.expander("📧 Full Email Details", expanded=True):
+                            render_email_detail(matches.iloc[0])
         else:
             st.info(
                 "Enter a keyword or apply filters above, then click **Search**."
