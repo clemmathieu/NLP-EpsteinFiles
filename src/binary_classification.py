@@ -28,23 +28,22 @@ from datasets import load_dataset
 from tqdm import tqdm
 from transformers import pipeline
 
-# ── Configuration ─────────────────────────────────────────────────────────────
+# Parameters
 BINARY_LABELS    = ["problematic", "non-problematic"]
 BINARY_THRESHOLD = 0.35     # flag if P(problematic) >= 35 %
 MAX_TEXT_LEN     = 512      # chars fed to the classifier per thread
-DEMO_MODE        = True     # False → run on the full dataset (~30-60 min CPU)
+DEMO_MODE        = True     # False = on the full dataset
 DEMO_SIZE        = 200
 OUTPUT_PATH      = "data/binary_classified.csv"
 
 
-# ── Data helpers ──────────────────────────────────────────────────────────────
-
 def parse_messages(messages_field) -> tuple:
     """
-    Parse a raw ``messages`` field (JSON string or list of dicts) and return:
+    Takes a thread's raw 'messages' field (string or list) and extracts:
     (full_text: str, unique_senders: list[str], date_range: str, msg_count: int)
     """
     try:
+        # convert JSON strings or python lists to Python objects
         if isinstance(messages_field, str):
             messages = json.loads(messages_field)
         elif isinstance(messages_field, list):
@@ -52,20 +51,23 @@ def parse_messages(messages_field) -> tuple:
         else:
             return "", [], "Unknown", 0
 
+        # lists to store extracted info for each message
         bodies, senders, dates = [], [], []
 
         for msg in messages:
+            # the ors check to handle different possible field names and missing data
             body   = msg.get("body", "") or msg.get("content", "") or ""
             sender = msg.get("sender", "") or msg.get("from", "") or ""
             date   = msg.get("date", "") or msg.get("timestamp", "") or ""
 
-            if body:   bodies.append(str(body).strip())
+            if body: bodies.append(str(body).strip())
             if sender: senders.append(str(sender).strip())
-            if date:   dates.append(str(date).strip())
+            if date: dates.append(str(date).strip())
 
-        full_text      = " [MSG] ".join(bodies)
-        unique_senders = list(dict.fromkeys(senders))          # ordered dedup
-        date_range     = (
+        # all message contents in the thread are merged into one string with [MSG] separators
+        full_text = "[MSG]".join(bodies)
+        unique_senders = list(dict.fromkeys(senders))
+        date_range = (
             f"{dates[0]} → {dates[-1]}" if len(dates) >= 2
             else (dates[0] if dates else "Unknown")
         )
@@ -76,7 +78,7 @@ def parse_messages(messages_field) -> tuple:
 
 
 def clean_text(text: str) -> str:
-    """Strip HTML, leaked headers, and non-printable characters."""
+    """Cleans the text by removing HTML tags, headers, and non-printable characters."""
     if not text or not isinstance(text, str):
         return ""
     text = re.sub(r"<[^>]+>", " ", text)
@@ -86,19 +88,17 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
-# ── Loading & preprocessing ───────────────────────────────────────────────────
-
 def load_and_preprocess() -> pd.DataFrame:
     """
-    Download the dataset from Hugging Face, parse every thread's messages,
-    clean the text, and return a tidy DataFrame ready for classification.
+    Download the dataset from Hugging Face, parse every thread's messages, clean the text, and return a DataFrame ready for classification.
     """
-    print("Downloading dataset from Hugging Face …")
+    print("Downloading dataset from Hugging Face...")
     raw = load_dataset("notesbymuneeb/epstein-emails")
     df  = raw["train"].to_pandas()
-    print(f"  Loaded {len(df):,} rows  |  columns: {list(df.columns)}")
+    print(f"Loaded {len(df):,} rows | columns: {list(df.columns)}")
 
-    print("Parsing messages and cleaning text …")
+    print("Parsing messages and cleaning text")
+    #For each row, run the parser
     parsed = df["messages"].apply(parse_messages)
 
     df["full_text"]     = [clean_text(p[0]) for p in parsed]
@@ -109,24 +109,23 @@ def load_and_preprocess() -> pd.DataFrame:
     # Ensure message_count exists even if the dataset already had one
     if "message_count" not in df.columns or df["message_count"].isna().all():
         df["message_count"] = [p[3] for p in parsed]
-
+    
+    # fills missing subjects to avoid null values
     df["subject"] = df["subject"].fillna("[No Subject]")
-    df["text_for_classification"] = (
-        df["subject"] + " " + df["full_text"]
-    ).str.strip()
+
+    # so that the model classifies subject + body text
+    df["text_for_classification"] = (df["subject"] + " " + df["full_text"]).str.strip()
 
     # Ensure thread_id exists
-    if "thread_id" not in df.columns:
-        df["thread_id"] = df.index.astype(str)
+    if "thread_id" not in df.columns: df["thread_id"] = df.index.astype(str)
 
     before = len(df)
+    #remove very short threads
     df = df[df["full_text"].str.len() > 20].reset_index(drop=True)
     print(f"  Removed {before - len(df)} empty / very-short threads")
     print(f"  ✅ {len(df):,} valid threads remaining")
     return df
 
-
-# ── Classification helpers ────────────────────────────────────────────────────
 
 def _extract_score(result: dict, label: str) -> float:
     try:
@@ -145,6 +144,7 @@ def classify_binary_batch(
     Returns a list of raw pipeline result dicts.
     """
     results     = []
+    #keep only the first 512 characters of each thread to keep computation manageable
     texts_trunc = [t[:MAX_TEXT_LEN] if t else "empty email" for t in texts]
 
     for i in tqdm(range(0, len(texts_trunc), batch_size), desc="Binary classification"):
@@ -159,22 +159,18 @@ def classify_binary_batch(
     return results
 
 
-# ── Main pipeline ─────────────────────────────────────────────────────────────
-
 def run(demo_mode: bool = DEMO_MODE) -> pd.DataFrame:
     """
     Execute the full Stage-1 pipeline.
 
     Parameters
-    ----------
     demo_mode : bool
-        When True, only classify the first ``DEMO_SIZE`` threads.
+        When True, only classify the first `DEMO_SIZE` threads.
 
     Returns
-    -------
     pd.DataFrame
-        DataFrame with ``prob_score`` and ``risk_flag`` columns appended,
-        also saved to ``OUTPUT_PATH``.
+        DataFrame with `prob_score` and `risk_flag` columns appended,
+        also saved to `OUTPUT_PATH`.
     """
     df = load_and_preprocess()
 
@@ -183,10 +179,10 @@ def run(demo_mode: bool = DEMO_MODE) -> pd.DataFrame:
         print(f"⚠️  DEMO MODE - classifying first {DEMO_SIZE} threads only")
     else:
         classify_df = df.copy()
-        print(f"Running on full dataset ({len(df):,} threads) …")
+        print(f"Running on full dataset ({len(df):,} threads) ...")
 
     device = 0 if torch.cuda.is_available() else -1
-    print(f"Loading classifier on {'GPU' if device == 0 else 'CPU'} …")
+    print(f"Loading classifier on {'GPU' if device == 0 else 'CPU'} ...")
     zero_shot = pipeline(
         "zero-shot-classification",
         model="facebook/bart-large-mnli",
