@@ -1,12 +1,8 @@
 # NLP-EpsteinFiles
 
-> **An automated two-stage NLP pipeline that flags suspicious emails, categorises them by offense type, and surfaces findings through an interactive Streamlit investigation dashboard.**
+An NLP investigation pipeline that identifies potentially problematic emails, classifies them by offense type, and visualises results in an interactive Streamlit dashboard.
 
-Built on the publicly released Epstein email dataset (5,082 threads from the U.S. House Oversight Committee), this project transforms an unstructured corpus into a structured, searchable investigation platform.
-
----
-
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nlp-epsteinfiles.streamlit.app/)
+Built on the publicly released Epstein email dataset (5,082 threads from the U.S. House Oversight Committee), the project transforms an unstructured corpus into a searchable investigation platform.
 
  *Live demo:** [https://nlp-epsteinfiles.streamlit.app/](https://nlp-epsteinfiles.streamlit.app/)
 
