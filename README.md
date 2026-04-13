@@ -171,25 +171,6 @@ Dashboard includes:
 
 ---
 
-### Tab 2 — Email Explorer
-
-- **Multi-keyword search** — comma-separated terms with **AND** (all keywords) or **OR** (any keyword) match mode
-- Active keyword chips displayed for clarity
-- **Risk filter**: All / Problematic Only / Safe Only
-- **Offense category filter**: all 6 categories available
-- **Results table** sorted by `prob_score` descending
-- **Email Detail View**: full thread text, colour-coded risk badge with score, offense labels, senders, date range, and extracted named entities grouped by type (PERSON, ORG, GPE, etc.)
-
-### Tab 3 — Semantic Search
-
-- **Natural-language query** — finds conceptually related emails even when exact keywords are absent
-- Powered by FAISS nearest-neighbour search on `all-MiniLM-L6-v2` embeddings
-- Returns **cosine similarity scores** (0–1); scores above ~0.4 indicate strong thematic relevance
-- Adjustable result count (3–25)
-- Full detail view for any selected result
-
----
-
 
 ## Dataset
 
