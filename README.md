@@ -10,7 +10,7 @@ Built on the publicly released Epstein email dataset (5,082 threads from the U.S
 
  *Live demo:** [https://nlp-epsteinfiles.streamlit.app/](https://nlp-epsteinfiles.streamlit.app/)
 
-Built on the publicly released Epstein email dataset (5,082 threads from the U.S. House Oversight Committee), this project transforms an unstructured corpus into a structured, searchable investigation platform.
+
 ---
 
 ## Table of Contents
