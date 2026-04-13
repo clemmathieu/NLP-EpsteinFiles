@@ -207,7 +207,7 @@ def run(demo_mode: bool = DEMO_MODE) -> pd.DataFrame:
     n_flagged = int(classify_df["risk_flag"].sum())
     pct       = 100 * n_flagged / len(classify_df)
     print(f"\nStage 1 complete")
-    print(f"Flagged as Problematic     : {n_flagged} ({pct:.1f}%)")
+    print(f"Flagged as Problematic : {n_flagged} ({pct:.1f}%)")
     print(f"Flagged as Non-Problematic : {len(classify_df) - n_flagged} ({100 - pct:.1f}%)")
 
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
