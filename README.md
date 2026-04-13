@@ -18,9 +18,7 @@ Built on the publicly released Epstein email dataset (5,082 threads from the U.S
 - [Getting Started](#-getting-started)
 - [Running the Pipeline](#️-running-the-pipeline)
 - [Launching the Dashboard](#-launching-the-dashboard)
-- [Dashboard Features](#️-dashboard-features)
 - [Dataset](#-dataset)
-- [Requirements](#-requirements)
 - [Team](#-team)
 - [Disclaimer](#️-disclaimer)
 
@@ -164,22 +162,14 @@ streamlit run app.py
 
 The dashboard opens automatically in your browser. If `data/classified_emails.csv` is missing, the app displays an error with the command to run first.
 
+Dashboard includes:
+
+- Dataset overview & risk metrics
+- Offense distribution visualisations
+- Searchable email explorer
+- Semantic search across threads
+
 ---
-
-## Dashboard Features
-
-### Sidebar
-Live dataset summary: total threads, flagged count, safe count, flagged %, average messages per thread. Model and threshold configuration displayed at the bottom.
-
-### Tab 1 — Dashboard
-
-| Element | Description |
-|---------|-------------|
-| Metrics row | Total threads · Flagged · Safe · Flagged % |
-| Risk Distribution | Donut chart — Problematic vs Non-Problematic with hole=0.45 |
-| Offense Breakdown | Horizontal bar chart of offense category counts (flagged emails only) |
-| Risk Score Distribution | Histogram of `P(Problematic)` with threshold marker at 0.35 |
-| Top 15 People | Bar chart of most-mentioned persons in flagged emails (NER, normalised, deduplicated) |
 
 ### Tab 2 — Email Explorer
 
@@ -213,26 +203,6 @@ Live dataset summary: total threads, flagged count, safe count, flagged %, avera
 
 ---
 
-## Requirements
-
-```
-datasets>=2.14.0
-transformers>=4.45.0
-sentence-transformers>=3.1.1
-faiss-cpu>=1.7.4
-torch>=2.0.0
-huggingface_hub>=0.20.0,<0.35.0
-spacy>=3.7.0
-rank-bm25>=0.2.2
-tqdm>=4.66.0
-pandas>=2.0.0
-numpy>=1.24.0
-scikit-learn>=1.3.0
-plotly>=5.18.0
-streamlit>=1.39.0
-```
-
----
 
 ##  Team
 
