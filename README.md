@@ -252,20 +252,13 @@ streamlit>=1.39.0
 
 ##  Team
 
-- Tessa Correig
-  
-- Bernarda Andrade
-  
-- Sofia Serantes
-  
+- Tessa Correig 
+- Bernarda Andrade 
+- Sofia Serantes 
 - Rakan Hourani
-
 - James Haunso
-  
 - Nour Farhat
-  
-- Clementine Mathieu
-  
+- Clementine Mathieu  
 - Paula Evangelista 
 
 ---
