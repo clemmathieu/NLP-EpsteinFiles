@@ -128,8 +128,10 @@ def load_and_preprocess() -> pd.DataFrame:
 
 
 def _extract_score(result: dict, label: str) -> float:
+    '''Extracts the score for a given label from the zero-shot classification result dict.'''
     try:
         return result["scores"][result["labels"].index(label)]
+    # will return 0.0 if the label is not found or if the expected keys are missing
     except Exception:
         return 0.0
 
@@ -140,7 +142,7 @@ def classify_binary_batch(
     batch_size: int = 16,
 ) -> list:
     """
-    Run zero-shot binary classification in batches.
+    Run zero-shot binary classification in batches instead of one thread at a time.
     Returns a list of raw pipeline result dicts.
     """
     results     = []
@@ -150,6 +152,7 @@ def classify_binary_batch(
     for i in tqdm(range(0, len(texts_trunc), batch_size), desc="Binary classification"):
         batch = texts_trunc[i : i + batch_size]
         try:
+            # multi_label = False means the model must choose between the two labels
             out = zero_shot(batch, BINARY_LABELS, multi_label=False)
             results.extend(out if isinstance(out, list) else [out])
         except Exception:
@@ -193,6 +196,7 @@ def run(demo_mode: bool = DEMO_MODE) -> pd.DataFrame:
         classify_df["text_for_classification"].tolist(), zero_shot
     )
 
+    #stores probability that each thread is 'problematic'
     classify_df["prob_score"] = [
         _extract_score(r, "problematic") for r in binary_results
     ]
@@ -202,18 +206,18 @@ def run(demo_mode: bool = DEMO_MODE) -> pd.DataFrame:
 
     n_flagged = int(classify_df["risk_flag"].sum())
     pct       = 100 * n_flagged / len(classify_df)
-    print(f"\n✅ Stage-1 complete")
-    print(f"   Flagged as Problematic     : {n_flagged} ({pct:.1f}%)")
-    print(f"   Flagged as Non-Problematic : {len(classify_df) - n_flagged} ({100 - pct:.1f}%)")
+    print(f"\nStage 1 complete")
+    print(f"Flagged as Problematic     : {n_flagged} ({pct:.1f}%)")
+    print(f"Flagged as Non-Problematic : {len(classify_df) - n_flagged} ({100 - pct:.1f}%)")
 
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-    # Serialise list column before writing to CSV
+
     save_df = classify_df.copy()
     save_df["senders"] = save_df["senders"].apply(
         lambda x: str(x) if isinstance(x, list) else x
     )
     save_df.to_csv(OUTPUT_PATH, index=False)
-    print(f"   Saved → {OUTPUT_PATH}")
+    print(f"Saved to {OUTPUT_PATH}")
 
     return classify_df
 
