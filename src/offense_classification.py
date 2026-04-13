@@ -29,15 +29,7 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 from transformers import pipeline
 
-#categories taken from Epstein case facts
-OFFENSE_CATEGORIES = [
-    "Sexual exploitation or trafficking",
-    "Financial fraud or money laundering",
-    "Obstruction or witness tampering",
-    "Bribery or corruption",
-    "Coercion or blackmail",
-    "Network facilitation or coordination",
-]
+from utils import NON_PERSON_TOKENS, OFFENSE_CATEGORIES
 
 OFFENSE_THRESHOLD  = 0.30 # assign a category if its score is >= 30%
 MAX_TEXT_LEN       = 512
@@ -49,24 +41,6 @@ OUTPUT_EMBEDDINGS  = "data/embeddings.npy"
 
 #  NER filtering & normalisation
 
-#words that spaCy incorretly marked as PERSON
-_NON_PERSON_TOKENS = frozenset({
-    # Social media & tech apps
-    "twitter", "facebook", "instagram", "google", "youtube", "snapchat",
-    "whatsapp", "linkedin", "tiktok", "apple", "microsoft", "amazon",
-    "netflix", "uber", "lyft", "paypal", "venmo", "blackberry", "nokia",
-    "telegram", "signal", "skype", "zoom", "slack",
-    # News & media
-    "cnn", "bbc", "nbc", "abc", "cbs", "msnbc", "fox", "fox news",
-    "new york times", "washington post", "reuters", "ap",
-    "associated press", "daily mail", "new york post",
-    # Government agencies
-    "fbi", "cia", "nsa", "doj", "sec", "dea", "nypd", "interpol",
-    "u.s.", "u.k.", "usa", "america",
-    # Honorifics / titles extracted on their own
-    "mr", "ms", "mrs", "dr", "sir", "lord", "lady", "hon", "esq",
-})
-
 
 def _is_valid_person(name: str) -> bool:
     """
@@ -77,7 +51,7 @@ def _is_valid_person(name: str) -> bool:
     return (
         bool(n)
         # checks if not in set of known non-person tokens
-        and n not in _NON_PERSON_TOKENS
+        and n not in NON_PERSON_TOKENS
         # has at least 3 characters
         and len(n) >= 3
         # has at most 1 digit (to filter out things like "FBI agent 007")
