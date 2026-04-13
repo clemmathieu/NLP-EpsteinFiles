@@ -19,7 +19,6 @@ Built on the publicly released Epstein email dataset (5,082 threads from the U.S
 - [Running the Pipeline](#️-running-the-pipeline)
 - [Launching the Dashboard](#-launching-the-dashboard)
 - [Dashboard Features](#️-dashboard-features)
-- [Data Artefacts](#-data-artefacts)
 - [Dataset](#-dataset)
 - [Requirements](#-requirements)
 - [Team](#-team)
@@ -119,7 +118,7 @@ Flagged emails are classified into one or more of the following six categories:
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/nour-farhat/NLP-EpsteinFiles.git
+git clone https://github.com/clemmathieu/NLP-EpsteinFiles.git
 cd NLP-EpsteinFiles
 ```
 
@@ -130,8 +129,6 @@ pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-> **GPU recommended.** The pipeline auto-detects CUDA and falls back to CPU if unavailable. Expect ~5 min (GPU) or ~60 min (CPU) for a full run.
-
 ---
 
 ## Running the Pipeline
@@ -139,23 +136,21 @@ python -m spacy download en_core_web_sm
 `main.py` orchestrates both stages sequentially. It supports three modes:
 
 ```bash
-# DEMO mode — classifies first 200 threads (~5 min on CPU)
+# DEMO mode — classifies first 200 threads 
 python main.py
 
-# Full run — classifies all 5,082 threads (~60 min CPU / ~15 min GPU)
+# Full run — classifies all 5,082 threads 
 python main.py --full
 
 # Skip Stage 1 — re-run Stage 2 only using existing binary_classified.csv
 python main.py --skip-stage1
 ```
+Generated outputs:
 
-**Output files produced:**
+- `binary_classified.csv` → Binary classification results  
+- `classified_emails.csv` → Full offense + entity annotations  
+- `embeddings.npy` → Semantic search embeddings  
 
-| File | Description |
-|------|-------------|
-| `data/binary_classified.csv` | All threads with `prob_score` and `risk_flag` |
-| `data/classified_emails.csv` | Full annotations: offense labels, NER entities, display columns |
-| `data/embeddings.npy` | Float32 array `(n_threads, 384)` for semantic search |
 
 ---
 
@@ -205,17 +200,6 @@ Live dataset summary: total threads, flagged count, safe count, flagged %, avera
 
 ---
 
-## Data Artefacts
-
-All files in `data/` are generated at runtime and should be added to `.gitignore`.
-
-| File | Key Columns |
-|------|------------|
-| `binary_classified.csv` | `thread_id` · `subject` · `full_text` · `senders` · `date_range` · `message_count` · `prob_score` · `risk_flag` |
-| `classified_emails.csv` | All of the above + `offense_labels` · `primary_offense` · `score_*` (one per category) · `entities_json` · `offense_labels_display` · `senders_display` · `risk_display` |
-| `embeddings.npy` | `float32` shape `(n_threads, 384)` — L2-normalised |
-
----
 
 ## Dataset
 
