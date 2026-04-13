@@ -31,21 +31,17 @@ Built on the publicly released Epstein email dataset (5,082 threads from the U.S
 
 Reviewing thousands of email threads manually is inefficient. This project automates the process through a two-stage NLP pipeline:
 
-**1.Binary Classification**
+**1. Binary Classification**
+   Flags each thread as *Problematic* or *Non-Problematic* using zero-shot classification (threshold `0.35`). The threshold is deliberately low to favour recall. Analysts can review false positives but cannot recover emails that were never flagged.
 
-Flags each thread as *Problematic* or *Non-Problematic* using zero-shot classification (threshold `0.35`). The threshold is deliberately low to favour recall. Analysts can review false positives but cannot recover emails that were never flagged.
+**2. Offense Classification**
+   Applies multi-label classification across 6 offense categories to every flagged thread (threshold `0.30` per label). An email can receive multiple labels simultaneously.
 
-**2.Offense Classification**
+**3. Entity Extraction & Semantic Search**
+   Extracts named entities with spaCy and enables semantic similarity search using sentence embeddings + FAISS.
 
-Applies multi-label classification across 6 offense categories to every flagged thread (threshold `0.30` per label). An email can receive multiple labels simultaneously.
-
-**3.Entity Extraction & Semantic Search**
-   
-Extracts named entities with spaCy and enables semantic similarity search using sentence embeddings + FAISS.
-
-**4.Streamlit Dashboard**
-
-Exposes all outputs through a three-tab interactive interface (Dashboard, Email Explorer, and Semantic Search).
+**4. Streamlit Dashboard**
+   Exposes all outputs through a three-tab interactive interface (Dashboard, Email Explorer, and Semantic Search).
 
 ---
 
