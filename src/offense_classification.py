@@ -1,22 +1,20 @@
 """
-Stage 2 – Offense Classification  +  NER  +  Sentence Embeddings
-=================================================================
-Takes the Stage-1 output (``data/binary_classified.csv``), and for every
-*flagged* thread applies multi-label zero-shot classification across six
-offense categories.  Named-entity recognition and sentence embeddings are
-then computed for the full dataset, and the final artefacts are saved.
+Stage 2: Offense classification, NER, and embeddings
+
+Takes the Stage-1 output ('data/binary_classified.csv'), and for every flagged thread applies multi-label zero-shot classification across six offense categories.
+Named-entity recognition and sentence embeddings are then computed for the full dataset, and saved.
 
 Architecture
-------------
+
 * Classifier : facebook/bart-large-mnli  (multi_label=True)
-* Categories : six taxonomy labels derived from known Epstein case facts
+* Categories : six labels derived from known Epstein case facts
 * Threshold  : 0.30 per label – intentionally permissive for recall
 * NER        : spaCy en_core_web_sm
-* Embeddings : all-MiniLM-L6-v2  (L2-normalised → cosine via inner product)
+* Embeddings : all-MiniLM-L6-v2  (L2-normalised - cosine via inner product)
 
 Outputs
--------
-data/classified_emails.csv  –  final annotated DataFrame (consumed by app.py)
+
+data/classified_emails.csv  –  final annotated DataFrame
 data/embeddings.npy          –  float32 array of shape (n_threads, 384)
 """
 
@@ -31,7 +29,7 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 from transformers import pipeline
 
-# ── Configuration ─────────────────────────────────────────────────────────────
+#categories taken from Epstein case facts
 OFFENSE_CATEGORIES = [
     "Sexual exploitation or trafficking",
     "Financial fraud or money laundering",
@@ -41,24 +39,24 @@ OFFENSE_CATEGORIES = [
     "Network facilitation or coordination",
 ]
 
-OFFENSE_THRESHOLD  = 0.30          # apply label when score >= threshold
+OFFENSE_THRESHOLD  = 0.30 # assign a category if its score is >= 30%
 MAX_TEXT_LEN       = 512
-EMBEDDER_MODEL     = "all-MiniLM-L6-v2"
+EMBEDDER_MODEL     = "all-MiniLM-L6-v2" 
 INPUT_PATH         = "data/binary_classified.csv"
 OUTPUT_CSV         = "data/classified_emails.csv"
 OUTPUT_EMBEDDINGS  = "data/embeddings.npy"
 
 
-# ── NER filtering & normalisation ─────────────────────────────────────────────
-# spaCy's small model sometimes mis-tags apps, agencies, and other non-persons
-# as PERSON entities. These are filtered out at extraction time.
+#  NER filtering & normalisation
+
+#words that spaCy incorretly marked as PERSON
 _NON_PERSON_TOKENS = frozenset({
     # Social media & tech apps
     "twitter", "facebook", "instagram", "google", "youtube", "snapchat",
     "whatsapp", "linkedin", "tiktok", "apple", "microsoft", "amazon",
     "netflix", "uber", "lyft", "paypal", "venmo", "blackberry", "nokia",
     "telegram", "signal", "skype", "zoom", "slack",
-    # News & media outlets
+    # News & media
     "cnn", "bbc", "nbc", "abc", "cbs", "msnbc", "fox", "fox news",
     "new york times", "washington post", "reuters", "ap",
     "associated press", "daily mail", "new york post",
@@ -78,8 +76,11 @@ def _is_valid_person(name: str) -> bool:
     n = name.strip().lower()
     return (
         bool(n)
+        # checks if not in set of known non-person tokens
         and n not in _NON_PERSON_TOKENS
+        # has at least 3 characters
         and len(n) >= 3
+        # has at most 1 digit (to filter out things like "FBI agent 007")
         and sum(c.isdigit() for c in n) <= 1
     )
 
@@ -87,7 +88,7 @@ def _is_valid_person(name: str) -> bool:
 def _normalize_name(name: str) -> str:
     """
     Title-case a person name consistently.
-    Handles hyphenated names (e.g. ``al-Fayed`` → ``Al-Fayed``).
+    Handles names with hyphens
     """
     return " ".join(
         "-".join(part.capitalize() for part in word.split("-"))
@@ -95,8 +96,7 @@ def _normalize_name(name: str) -> str:
     )
 
 
-# ── General helpers ───────────────────────────────────────────────────────────
-
+# stage 1 saved some list columns to CSV as strings; the function converts that back into a real Python list
 def _safe_eval_list(value) -> list:
     """Safely deserialise a stringified Python list back to a real list."""
     if isinstance(value, list):
@@ -111,13 +111,13 @@ def _safe_eval_list(value) -> list:
 
 
 def _extract_score(result: dict, label: str) -> float:
+    """Extracts the score for a given label from the zero-shot classification result dict."""
+
     try:
         return result["scores"][result["labels"].index(label)]
     except Exception:
         return 0.0
 
-
-# ── Offense classification ────────────────────────────────────────────────────
 
 def classify_offenses_batch(
     texts: list,
@@ -129,11 +129,14 @@ def classify_offenses_batch(
     Returns a list of raw pipeline result dicts.
     """
     results     = []
+    #each thread is limited to x characters before classification
     texts_trunc = [t[:MAX_TEXT_LEN] if t else "empty" for t in texts]
 
+    # processes 8 texts at a time
     for i in tqdm(range(0, len(texts_trunc), batch_size), desc="Offense classification"):
         batch = texts_trunc[i : i + batch_size]
         try:
+            # multi_label = True allows the model to assign multiple labels to the same thread if appropriate
             out = zero_shot(batch, OFFENSE_CATEGORIES, multi_label=True)
             results.extend(out if isinstance(out, list) else [out])
         except Exception:
@@ -154,7 +157,7 @@ def _get_offense_labels(row: pd.Series) -> list:
     return labels if labels else ["unclassified"]
 
 
-# ── NER ───────────────────────────────────────────────────────────────────────
+# name entity recognition
 
 def extract_entities(text: str, nlp) -> dict:
     """
@@ -163,13 +166,16 @@ def extract_entities(text: str, nlp) -> dict:
     Entity types retained: PERSON, ORG, GPE, LOC, DATE, MONEY.
 
     PERSON entities are additionally:
-    - filtered through ``_is_valid_person`` to remove apps, agencies, etc.
+    - filtered through '_is_valid_person' to remove apps, agencies, etc.
     - normalised to consistent title-case via ``_normalize_name``
     """
+    #skip texts that are very short
     if not text or len(text) < 10:
         return {}
 
-    doc      = nlp(text[:1500])
+    # only process first 1500 characters
+    doc = nlp(text[:1500])
+    #dictionary of extracted entities
     entities: dict = {}
 
     for ent in doc.ents:
@@ -190,7 +196,7 @@ def extract_entities(text: str, nlp) -> dict:
     return entities
 
 
-# ── Sentence embeddings ───────────────────────────────────────────────────────
+# Sentence embeddings
 
 def build_embeddings(df: pd.DataFrame) -> np.ndarray:
     """
@@ -198,6 +204,7 @@ def build_embeddings(df: pd.DataFrame) -> np.ndarray:
     Returns a float32 array of shape (n, 384), L2-normalised for cosine search.
     """
     print("Loading sentence-transformer model …")
+    # loading embedding model
     embedder = SentenceTransformer(EMBEDDER_MODEL)
 
     subjects   = df["subject"].fillna("").astype(str)
@@ -205,14 +212,13 @@ def build_embeddings(df: pd.DataFrame) -> np.ndarray:
     texts      = (subjects + " " + full_texts).tolist()
 
     print(f"Encoding {len(texts):,} threads …")
+    # converts each thread into a 384 dimensional vector
     emb = embedder.encode(
         texts, batch_size=64, show_progress_bar=True, convert_to_numpy=True
     )
+    #normalize embeddings (L2)
     emb = (emb / np.linalg.norm(emb, axis=1, keepdims=True)).astype("float32")
     return emb
-
-
-# ── Main pipeline ─────────────────────────────────────────────────────────────
 
 def run() -> pd.DataFrame:
     """
@@ -229,10 +235,10 @@ def run() -> pd.DataFrame:
     print(f"Loading Stage-1 output from {INPUT_PATH} …")
     classify_df = pd.read_csv(INPUT_PATH)
 
-    # Restore list columns serialised by Stage 1
+    # Restore list columns Stage 1
     classify_df["senders"] = classify_df["senders"].apply(_safe_eval_list)
 
-    # ── Stage-2 zero-shot classifier ──────────────────────────────────────────
+    #  Stage-2 zero-shot classifier
     device = 0 if torch.cuda.is_available() else -1
     print(f"Loading classifier on {'GPU' if device == 0 else 'CPU'} …")
     zero_shot = pipeline(
@@ -272,7 +278,7 @@ def run() -> pd.DataFrame:
             col = "score_" + cat.replace(" ", "_").replace("/", "_")
             classify_df.at[idx, col] = row[col]
 
-    print("\n✅ Stage-2 complete")
+    print("\nStage-2 complete")
     offense_counts: dict = {}
     for labels in flagged_df["offense_labels"]:
         for lab in labels:
@@ -280,7 +286,7 @@ def run() -> pd.DataFrame:
     for k, v in sorted(offense_counts.items(), key=lambda x: -x[1]):
         print(f"   {k}: {v}")
 
-    # ── NER ───────────────────────────────────────────────────────────────────
+    # NER
     print("\nRunning NER on all email threads …")
     nlp = spacy.load("en_core_web_sm")
     classify_df["entities"] = classify_df["full_text"].apply(
@@ -296,13 +302,12 @@ def run() -> pd.DataFrame:
     print("\nTop persons in flagged emails:")
     print(top_persons.head(10).to_string())
 
-    # ── Embeddings ────────────────────────────────────────────────────────────
+    #  Embeddings
     embeddings = build_embeddings(classify_df)
 
-    # ── Save artefacts ────────────────────────────────────────────────────────
+    # Save
     os.makedirs("data", exist_ok=True)
 
-    # Add display-friendly string columns (easier for the app to consume)
     classify_df["offense_labels_display"] = classify_df["offense_labels"].apply(
         lambda x: ", ".join(x) if isinstance(x, list) else str(x)
     )
@@ -314,7 +319,7 @@ def run() -> pd.DataFrame:
     )
     classify_df["entities_json"] = classify_df["entities"].apply(str)
 
-    # Serialise list columns so CSV round-trips cleanly
+    # list columns so CSV
     save_df = classify_df.copy()
     save_df["senders"]        = save_df["senders"].apply(str)
     save_df["offense_labels"] = save_df["offense_labels"].apply(str)
@@ -324,8 +329,8 @@ def run() -> pd.DataFrame:
     np.save(OUTPUT_EMBEDDINGS, embeddings)
 
     print(f"\n✅ Pipeline complete")
-    print(f"   CSV        → {OUTPUT_CSV}  ({len(save_df):,} rows)")
-    print(f"   Embeddings → {OUTPUT_EMBEDDINGS}  {embeddings.shape}")
+    print(f"CSV - {OUTPUT_CSV}  ({len(save_df):,} rows)")
+    print(f"Embeddings - {OUTPUT_EMBEDDINGS}  {embeddings.shape}")
 
     return classify_df
 
