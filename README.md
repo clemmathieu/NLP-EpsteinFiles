@@ -75,7 +75,7 @@ NLP-EpsteinFiles/
 
 ---
 
-## ⚙️ Pipeline Architecture
+## Pipeline Architecture
 
 ```
 Hugging Face Dataset
