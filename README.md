@@ -15,7 +15,6 @@ Built on the publicly released Epstein email dataset (5,082 threads from the U.S
 - [Repository Structure](#-repository-structure)
 - [Pipeline Architecture](#️-pipeline-architecture)
 - [Offense Categories](#️-offense-categories)
-- [Models & Thresholds](#-models--thresholds)
 - [Getting Started](#-getting-started)
 - [Running the Pipeline](#️-running-the-pipeline)
 - [Launching the Dashboard](#-launching-the-dashboard)
@@ -114,19 +113,6 @@ Flagged emails are classified into one or more of the following six categories:
 
 ---
 
-## Models & Thresholds
-
-| Component | Model / Tool | Detail |
-|-----------|-------------|--------|
-| Binary Classification | `facebook/bart-large-mnli` | Zero-shot NLI · threshold `0.35` · favours recall |
-| Offense Classification | `facebook/bart-large-mnli` | Zero-shot multi-label · threshold `0.30` per category |
-| Sentence Embeddings | `all-MiniLM-L6-v2` | 384-dim · L2-normalised for cosine search |
-| Named Entity Recognition | `spaCy en_core_web_sm` | PERSON · ORG · GPE · LOC · DATE · MONEY |
-| Vector Index | FAISS `IndexFlatIP` | Exact inner-product (cosine) search |
-
-> **Why a low binary threshold?** At `0.35`, the classifier flags anything even slightly uncertain. Analysts can dismiss false positives on review but emails that are never flagged are never seen again.
-
----
 
 ## Getting Started
 
@@ -235,15 +221,11 @@ All files in `data/` are generated at runtime and should be added to `.gitignore
 
 **Source:** [notesbymuneeb/epstein-emails](https://huggingface.co/datasets/notesbymuneeb/epstein-emails) — downloaded automatically by the pipeline via the `datasets` library.
 
-| Field | Description |
-|-------|-------------|
-| `thread_id` | Unique identifier per email thread |
-| `source_file` | Original House Oversight document filename |
-| `subject` | Email subject (401 threads have no subject → replaced with `[No Subject]`) |
-| `messages` | JSON list of messages with `sender`, `recipient`, `body`, `date` fields |
-| `message_count` | Number of messages in the thread |
-
-The pipeline joins all message bodies within a thread into a single `full_text` string, separated by `[MSG]` markers.
+- 5,082 public email threads
+  
+- Released by the U.S. House Oversight Committee
+  
+- Downloaded automatically through Hugging Face datasets
 
 ---
 
@@ -270,16 +252,21 @@ streamlit>=1.39.0
 
 ##  Team
 
-| Name | Githb |
-|------|------|
-| Tessa Correig | tessacorreig |
-| Bernarda Andrade | 22andradeb |
-| Sofia Serantes | sofiaserantes |
-| Rakan Hourani | rakanhourani |
-| James Haunso | - |
-| Nour Farhat | nour-farhat |
-| Clementine Mathieu | clemmathieu |
-| Paula Evangelista | pauevangelista |
+- Tessa Correig
+  
+- Bernarda Andrade
+  
+- Sofia Serantes
+  
+- Rakan Hourani
+
+- James Haunso
+  
+- Nour Farhat
+  
+- Clementine Mathieu
+  
+- Paula Evangelista 
 
 ---
 
@@ -288,5 +275,3 @@ streamlit>=1.39.0
 This project is an academic NLP exercise completed as part of a university course. All data is publicly available and was released by the U.S. House Oversight Committee. Classification outputs are **risk indicators only** and do not constitute legal conclusions or accusations of any kind. No personally identifiable information has been added beyond what exists in the public dataset.
 
 ---
-
-*NLP, Text Mining and Semantic Analysis - Group Project · April 2026*
