@@ -4,7 +4,7 @@ An NLP investigation pipeline that identifies potentially problematic emails, cl
 
 Built on the publicly released Epstein email dataset (5,082 threads from the U.S. House Oversight Committee), the project transforms an unstructured corpus into a searchable investigation platform.
 
- *Live demo:** [https://nlp-epsteinfiles.streamlit.app/](https://nlp-epsteinfiles.streamlit.app/)
+ **Live demo:** [https://nlp-epsteinfiles.streamlit.app/](https://nlp-epsteinfiles.streamlit.app/)
 
 
 ---
