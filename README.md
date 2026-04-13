@@ -29,17 +29,15 @@ Built on the publicly released Epstein email dataset (5,082 threads from the U.S
 ---
 ## Project Overview
 
-Manually reviewing 5,000+ email threads is not feasible. This project automates the triage process through a sequential NLP pipeline:
+Reviewing thousands of email threads manually is inefficient. This project automates the process through a two-stage NLP pipeline:
 
-1. **Stage 1 — Binary Classification** flags each thread as *Problematic* or *Non-Problematic* using zero-shot NLI (`facebook/bart-large-mnli`, threshold `0.35`). The threshold is deliberately low to favour recall — analysts can review false positives but cannot recover emails that were never flagged.
+1. **Stage 1: Binary Classification** flags each thread as *Problematic* or *Non-Problematic* using zero-shot classification (threshold `0.35`). The threshold is deliberately low to favour recall. Analysts can review false positives but cannot recover emails that were never flagged.
 
-2. **Stage 2 — Offense Classification** applies multi-label zero-shot classification across 6 offense categories to every flagged thread (threshold `0.30` per label). An email can receive multiple labels simultaneously.
+2. **Stage 2: Offense Classification** applies multi-label classification across 6 offense categories to every flagged thread (threshold `0.30` per label). An email can receive multiple labels simultaneously.
 
-3. **NER** runs `spaCy en_core_web_sm` on all threads to extract persons, organisations, locations, dates, and monetary references. Person names are normalised and filtered to remove apps, agencies, and honorifics that the model sometimes mis-tags.
+3. **Entity Extraction & Semantic Search** Extracts named entities with spaCy and enables semantic similarity search using sentence embeddings + FAISS.
 
-4. **Sentence Embeddings** encode all threads with `all-MiniLM-L6-v2` into L2-normalised 384-dim vectors stored in a FAISS `IndexFlatIP` index for fast cosine-similarity search.
-
-5. **Streamlit Dashboard** exposes all outputs through a three-tab interactive interface — Dashboard, Email Explorer, and Semantic Search.
+5. **Streamlit Dashboard** exposes all outputs through a three-tab interactive interface (Dashboard, Email Explorer, and Semantic Search).
 
 ---
 
@@ -74,50 +72,22 @@ NLP-EpsteinFiles/
 ## Pipeline Architecture
 
 ```
-Hugging Face Dataset
-notesbymuneeb/epstein-emails  (5,082 threads)
-            │
-            ▼
-┌──────────────────────────────────────────┐
-│  src/binary_classification.py            │
-│                                          │
-│  • Parse nested JSON messages field      │
-│  • Concatenate bodies with [MSG] marker  │
-│  • Clean text: HTML, headers, noise      │
-│  • Zero-shot NLI classification          │
-│    Model  : facebook/bart-large-mnli     │
-│    Labels : problematic / non-problematic│
-│    Threshold : 0.35                      │
-│                                          │
-│  → data/binary_classified.csv            │
-└─────────────────┬────────────────────────┘
-                  │  risk_flag == 1 only
-                  ▼
-┌──────────────────────────────────────────┐
-│  src/offense_classification.py           │
-│                                          │
-│  • Multi-label zero-shot (6 categories)  │
-│    Model  : facebook/bart-large-mnli     │
-│    Threshold : 0.30 per label            │
-│  • NER — spaCy en_core_web_sm            │
-│    Types  : PERSON · ORG · GPE · LOC     │
-│             DATE · MONEY                 │
-│    + name normalisation & filtering      │
-│  • Sentence embeddings                   │
-│    Model  : all-MiniLM-L6-v2  (384-dim) │
-│    Index  : FAISS IndexFlatIP            │
-│                                          │
-│  → data/classified_emails.csv            │
-│  → data/embeddings.npy                   │
-└─────────────────┬────────────────────────┘
-                  ▼
-┌──────────────────────────────────────────┐
-│  app.py  —  Streamlit Dashboard          │
-│                                          │
-│  Tab 1 │ 📊  Dashboard                  │
-│  Tab 2 │ 🔎  Email Explorer             │
-│  Tab 3 │ 🧠  Semantic Search            │
-└──────────────────────────────────────────┘
+
+Epstein Email Dataset
+      │
+      ▼
+Stage 1: Binary Classification
+(facebook/bart-large-mnli)
+      │
+      ▼
+Flagged Emails Only
+      │
+      ▼
+Stage 2: Offense Classification
++ NER + Embeddings
+      │
+      ▼
+Streamlit Dashboard
 ```
 
 ---
@@ -126,16 +96,17 @@ notesbymuneeb/epstein-emails  (5,082 threads)
 
 Flagged emails are classified into one or more of the following six categories:
 
-| # | Category |
-|---|----------|
-| 1 | Sexual exploitation or trafficking |
-| 2 | Financial fraud or money laundering |
-| 3 | Obstruction or witness tampering |
-| 4 | Bribery or corruption |
-| 5 | Coercion or blackmail |
-| 6 | Network facilitation or coordination |
-
-Emails scoring below `0.30` on all categories are tagged `unclassified`.
+- Sexual exploitation or trafficking
+  
+- Financial fraud or money laundering
+  
+- Obstruction or witness tampering
+  
+- Bribery or corruption
+  
+- Coercion or blackmail
+  
+- Network facilitation or coordination
 
 ---
 
@@ -149,7 +120,7 @@ Emails scoring below `0.30` on all categories are tagged `unclassified`.
 | Named Entity Recognition | `spaCy en_core_web_sm` | PERSON · ORG · GPE · LOC · DATE · MONEY |
 | Vector Index | FAISS `IndexFlatIP` | Exact inner-product (cosine) search |
 
-> **Why a low binary threshold?** At `0.35`, the classifier flags anything even slightly uncertain. Analysts can dismiss false positives on review — but emails that are never flagged are never seen again.
+> **Why a low binary threshold?** At `0.35`, the classifier flags anything even slightly uncertain. Analysts can dismiss false positives on review but emails that are never flagged are never seen again.
 
 ---
 
