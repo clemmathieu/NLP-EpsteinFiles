@@ -308,7 +308,7 @@ streamlit>=1.39.0
 | James Haunso | - |
 | Nour Farhat | nour-farhat |
 | Clementine Mathieu | clemmathieu |
-| Paula Evangelista | - |
+| Paula Evangelista | pauevangelista |
 
 ---
 
