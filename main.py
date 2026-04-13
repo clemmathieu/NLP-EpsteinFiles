@@ -1,17 +1,14 @@
 """
 main.py - Epstein Investigation Pipeline
-=========================================
-Orchestrates the two-stage NLP classification pipeline end-to-end and
-writes all artefacts consumed by the Streamlit dashboard.
 
-    Stage 1 - Binary classification   →  data/binary_classified.csv
-    Stage 2 - Offense classification  →  data/classified_emails.csv
+    Stage 1 - Binary classification - data/binary_classified.csv
+    Stage 2 - Offense classification - data/classified_emails.csv
                                          data/embeddings.npy
 
 Usage
------
-    python main.py            # DEMO mode  (first 200 threads, ~5 min CPU)
-    python main.py --full     # Full run   (~60 min CPU / ~15 min GPU)
+
+    python main.py # DEMO mode (first 200 threads, ~5 min CPU)
+    python main.py --full # Full run   (~60 min CPU / ~15 min GPU)
 
 After the pipeline completes, launch the dashboard with:
     streamlit run app.py
@@ -28,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src import binary_classification, offense_classification
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+#  CLI
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -36,8 +33,8 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  python main.py           # DEMO mode (200 threads)\n"
-            "  python main.py --full    # Full dataset\n"
+            "  python main.py # DEMO mode (200 threads)\n"
+            "  python main.py --full # Full dataset\n"
             "  python main.py --skip-stage1  # Re-run Stage 2 only"
         ),
     )
@@ -53,8 +50,7 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
+#  Helpers
 
 def _header(text: str) -> None:
     width = 60
@@ -67,8 +63,7 @@ def _section(text: str) -> None:
     print(f"\n[•] {text}")
     print("-" * 50)
 
-
-# ── Main ──────────────────────────────────────────────────────────────────────
+#  Main 
 
 def main() -> None:
     args    = parse_args()
@@ -81,7 +76,7 @@ def main() -> None:
         print("\n⚠️  Running in DEMO mode (first 200 threads).")
         print("   Pass --full to classify the entire dataset.")
 
-    # ── Stage 1 ───────────────────────────────────────────────────────────────
+    #  Stage 1 
     if args.skip_stage1:
         stage1_path = binary_classification.OUTPUT_PATH
         if not os.path.exists(stage1_path):
@@ -92,11 +87,10 @@ def main() -> None:
         _section("Stage 1 - Binary Classification")
         binary_classification.run(demo_mode=demo)
 
-    # ── Stage 2 ───────────────────────────────────────────────────────────────
+    # Stage 2 
     _section("Stage 2 - Offense Classification + NER + Embeddings")
     offense_classification.run()
 
-    # ── Done ──────────────────────────────────────────────────────────────────
     elapsed = time.time() - t_start
     _header(f"✅  PIPELINE COMPLETE  ({elapsed / 60:.1f} min)")
 
@@ -104,7 +98,6 @@ def main() -> None:
         "\nTo launch the investigation dashboard run:\n\n"
         "    streamlit run app.py\n"
     )
-
 
 if __name__ == "__main__":
     main()
