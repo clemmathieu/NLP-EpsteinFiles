@@ -33,7 +33,7 @@ BINARY_LABELS    = ["problematic", "non-problematic"]
 BINARY_THRESHOLD = 0.35     # flag if P(problematic) >= 35 %
 MAX_TEXT_LEN     = 512      # chars fed to the classifier per thread
 DEMO_MODE        = True     # False = on the full dataset
-DEMO_SIZE        = 200
+DEMO_SIZE        = 800
 OUTPUT_PATH      = "data/binary_classified.csv"
 
 
